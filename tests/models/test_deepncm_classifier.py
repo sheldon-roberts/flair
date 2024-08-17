@@ -86,11 +86,9 @@ class TestDeepNCMClassifier(BaseModelTest):
     def test_get_closest_prototypes(self, corpus, embeddings):
         label_dict = corpus.make_label_dictionary(label_type=self.train_label_type)
         model = self.build_model(embeddings, label_dict)
-
-        # Create a mock input vector
         input_vector = torch.randn(model.encoding_dim)
-
         closest_prototypes = model.get_closest_prototypes(input_vector, top_k=2)
+
         assert len(closest_prototypes) == 2
         assert all(isinstance(item, tuple) and len(item) == 2 for item in closest_prototypes)
 
@@ -101,7 +99,6 @@ class TestDeepNCMClassifier(BaseModelTest):
         label_dict = corpus.make_label_dictionary(label_type=self.train_label_type)
         model = self.build_model(embeddings, label_dict)
 
-        # Create a small batch of sentences
         sentences = [Sentence("This movie was great!"), Sentence("I didn't enjoy this film at all.")]
         for sentence, label in zip(sentences, list(label_dict.get_items())[:2]):
             sentence.add_label(self.train_label_type, label)
@@ -111,7 +108,6 @@ class TestDeepNCMClassifier(BaseModelTest):
         assert loss.item() > 0
         assert count == len(sentences)
 
-
     @pytest.mark.parametrize("mean_update_method", ["online", "condensation", "decay"])
     def test_mean_update_methods(self, corpus, embeddings, mean_update_method):
         label_dict = corpus.make_label_dictionary(label_type=self.train_label_type)
@@ -119,7 +115,6 @@ class TestDeepNCMClassifier(BaseModelTest):
 
         initial_prototypes = model.class_prototypes.clone()
 
-        # Create a small batch of sentences and simulate a forward pass
         sentences = [Sentence("This movie was great!"), Sentence("I didn't enjoy this film at all.")]
         for sentence, label in zip(sentences, list(label_dict.get_items())[:2]):
             sentence.add_label(self.train_label_type, label)

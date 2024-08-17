@@ -11,7 +11,7 @@ class DeepNCMPlugin(TrainerPlugin):
     """
 
     def _process_models(self, operation: str):
-        """Process all DeepNCMClassifier models, whether in a multitask setting or not.
+        """Process updates for all DeepNCMClassifier models in the trainer.
 
         Args:
             operation (str): The operation to perform ('condensation' or 'update')
