@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 from tqdm import tqdm
@@ -42,6 +42,19 @@ class DeepNCMClassifier(Classifier[Sentence]):
         multi_label: bool = False,
         multi_label_threshold: float = 0.5,
     ):
+        """Initialize a DeepNCMClassifier.
+
+        Args:
+            embeddings: Document embeddings to use for encoding text.
+            label_dictionary: Dictionary containing the label vocabulary.
+            label_type: The type of label to predict.
+            encoding_dim: The dimensionality of the encoded embeddings (default is the same as the input embeddings).
+            alpha: The decay factor for updating class prototypes (default is 0.9).
+            mean_update_method: The method for updating class prototypes ('online', 'condensation', or 'decay').
+            use_encoder: Whether to apply an encoder to the input embeddings (default is True).
+            multi_label: Whether to predict multiple labels per sentence (default is False).
+            multi_label_threshold: The threshold for multi-label prediction (default is 0.5).
+        """
         super().__init__()
 
         self.embeddings = embeddings
@@ -85,7 +98,7 @@ class DeepNCMClassifier(Classifier[Sentence]):
         self.prototype_update_counts = torch.zeros(self.num_classes).to(flair.device)
         self.to(flair.device)
 
-    def _validate_parameters(self):
+    def _validate_parameters(self) -> None:
         """Validate the input parameters."""
         assert 0 <= self.alpha <= 1, "alpha must be in the range [0, 1]"
         assert self.mean_update_method in [
@@ -125,6 +138,14 @@ class DeepNCMClassifier(Classifier[Sentence]):
         return torch.cdist(encoded_embeddings, self.class_prototypes)
 
     def forward_loss(self, data_points: List[Sentence]) -> Tuple[torch.Tensor, int]:
+        """Compute the loss for a batch of sentences.
+
+        Args:
+            data_points: A list of sentences.
+
+        Returns:
+            Tuple[torch.Tensor, int]: The total loss and the number of sentences.
+        """
         encoded_embeddings = self.forward(data_points)
         labels = self._prepare_label_tensor(data_points)
         distances = self._calculate_distances(encoded_embeddings)
@@ -134,6 +155,14 @@ class DeepNCMClassifier(Classifier[Sentence]):
         return loss, len(data_points)
 
     def _prepare_label_tensor(self, sentences: List[Sentence]) -> torch.Tensor:
+        """Prepare the label tensor for the given sentences.
+
+        Args:
+            sentences: A list of sentences.
+
+        Returns:
+            torch.Tensor: The label tensor for the given sentences.
+        """
         if self.multi_label:
             return torch.tensor(
                 [
@@ -161,7 +190,7 @@ class DeepNCMClassifier(Classifier[Sentence]):
                 device=flair.device,
             )
 
-    def _calculate_prototype_updates(self, encoded_embeddings: torch.Tensor, labels: torch.Tensor):
+    def _calculate_prototype_updates(self, encoded_embeddings: torch.Tensor, labels: torch.Tensor) -> None:
         """Calculate updates for class prototypes based on the current batch.
 
         Args:
@@ -178,7 +207,7 @@ class DeepNCMClassifier(Classifier[Sentence]):
         self.prototype_updates[mask] += updates[mask]
         self.prototype_update_counts[mask] += counts[mask]
 
-    def update_prototypes(self):
+    def update_prototypes(self) -> None:
         """Apply accumulated updates to class prototypes."""
         with torch.no_grad():
             update_mask = self.prototype_update_counts > 0
@@ -300,7 +329,7 @@ class DeepNCMClassifier(Classifier[Sentence]):
             return total_loss, total_sentences
         return sentences
 
-    def _get_state_dict(self):
+    def _get_state_dict(self) -> Dict[str, Any]:
         """Get the state dictionary of the model.
 
         Returns:
@@ -323,7 +352,7 @@ class DeepNCMClassifier(Classifier[Sentence]):
         return model_state
 
     @classmethod
-    def _init_model_with_state_dict(cls, state, **kwargs):
+    def _init_model_with_state_dict(cls, state, **kwargs) -> "DeepNCMClassifier":
         """Initialize the model from a state dictionary.
 
         Args:
@@ -407,7 +436,7 @@ class DeepNCMClassifier(Classifier[Sentence]):
         return nearest_prototypes
 
     @property
-    def label_type(self):
+    def label_type(self) -> str:
         """Get the label type for this classifier."""
         return self._label_type
 
