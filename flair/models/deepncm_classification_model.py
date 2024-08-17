@@ -40,6 +40,7 @@ class DeepNCMClassifier(Classifier[Sentence]):
         mean_update_method: str = "online",
         use_encoder: bool = True,
         multi_label: bool = False,
+        multi_label_threshold: float = 0.5,
     ):
         super().__init__()
 
@@ -50,6 +51,7 @@ class DeepNCMClassifier(Classifier[Sentence]):
         self.mean_update_method = mean_update_method
         self.use_encoder = use_encoder
         self.multi_label = multi_label
+        self.multi_label_threshold = multi_label_threshold
         self.num_classes = len(label_dictionary)
         self.embedding_dim = embeddings.embedding_length
 
@@ -68,6 +70,12 @@ class DeepNCMClassifier(Classifier[Sentence]):
             )
         else:
             self.encoder = torch.nn.Sequential(torch.nn.Identity())
+
+        self.loss_function = (
+            torch.nn.BCEWithLogitsLoss(reduction="sum")
+            if self.multi_label
+            else torch.nn.CrossEntropyLoss(reduction="sum")
+        )
 
         self.class_prototypes = torch.nn.Parameter(
             torch.nn.functional.normalize(torch.randn(self.num_classes, self.encoding_dim)), requires_grad=False
@@ -117,28 +125,41 @@ class DeepNCMClassifier(Classifier[Sentence]):
         return torch.cdist(encoded_embeddings, self.class_prototypes)
 
     def forward_loss(self, data_points: List[Sentence]) -> Tuple[torch.Tensor, int]:
-        """Compute the loss for a batch of sentences.
-
-        Args:
-            data_points: List of input sentences.
-
-        Returns:
-            Tuple[torch.Tensor, int]: The computed loss and the number of sentences.
-        """
         encoded_embeddings = self.forward(data_points)
-
-        labels = torch.tensor(
-            [
-                self.label_dictionary.get_idx_for_item(sentence.get_label(self.label_type).value)
-                for sentence in data_points
-            ],
-            device=flair.device,
-        )
-
+        labels = self._prepare_label_tensor(data_points)
         distances = self._calculate_distances(encoded_embeddings)
-        loss = torch.nn.functional.cross_entropy(-distances, labels, reduction="sum")
+        loss = self.loss_function(-distances, labels)
         self._calculate_prototype_updates(encoded_embeddings, labels)
+
         return loss, len(data_points)
+
+    def _prepare_label_tensor(self, sentences: List[Sentence]) -> torch.Tensor:
+        if self.multi_label:
+            return torch.tensor(
+                [
+                    [
+                        (
+                            1
+                            if label
+                            in [sentence_label.value for sentence_label in sentence.get_labels(self._label_type)]
+                            else 0
+                        )
+                        for label in self.label_dictionary.get_items()
+                    ]
+                    for sentence in sentences
+                ],
+                dtype=torch.float,
+                device=flair.device,
+            )
+        else:
+            return torch.tensor(
+                [
+                    self.label_dictionary.get_idx_for_item(sentence.get_label(self._label_type).value)
+                    for sentence in sentences
+                ],
+                dtype=torch.long,
+                device=flair.device,
+            )
 
     def _calculate_prototype_updates(self, encoded_embeddings: torch.Tensor, labels: torch.Tensor):
         """Calculate updates for class prototypes based on the current batch.
@@ -147,7 +168,10 @@ class DeepNCMClassifier(Classifier[Sentence]):
             encoded_embeddings: Encoded representations of the input sentences.
             labels: True labels for the input sentences.
         """
-        one_hot = torch.nn.functional.one_hot(labels, num_classes=self.num_classes).float()
+        one_hot = (
+            labels if self.multi_label else torch.nn.functional.one_hot(labels, num_classes=self.num_classes).float()
+        )
+
         updates = torch.matmul(one_hot.t(), encoded_embeddings)
         counts = one_hot.sum(dim=0)
         mask = counts > 0
@@ -225,7 +249,6 @@ class DeepNCMClassifier(Classifier[Sentence]):
                 batch_size=mini_batch_size,
             )
 
-            # Progress bar for verbosity
             if verbose:
                 progress_bar = tqdm(dataloader)
                 progress_bar.set_description("Predicting")
@@ -235,44 +258,46 @@ class DeepNCMClassifier(Classifier[Sentence]):
             total_sentences = 0
 
             for batch in dataloader:
-                # Stop if all sentences are empty
                 if not batch:
                     continue
 
                 encoded_embeddings = self.forward(batch)
                 distances = self._calculate_distances(encoded_embeddings)
-                probabilities = torch.nn.functional.softmax(-distances, dim=1)
+
+                if self.multi_label:
+                    probabilities = torch.sigmoid(-distances)
+                else:
+                    probabilities = torch.nn.functional.softmax(-distances, dim=1)
 
                 if return_loss:
-                    labels = torch.tensor(
-                        [
-                            self.label_dictionary.get_idx_for_item(sentence.get_label(self.label_type).value)
-                            for sentence in batch
-                        ],
-                        device=flair.device,
-                    )
-                    loss = torch.nn.functional.cross_entropy(-distances, labels, reduction="sum")
+                    labels = self._prepare_label_tensor(batch)
+                    loss = self.loss_function(-distances, labels)
                     total_loss += loss.item()
                     total_sentences += len(batch)
 
-                predicted_idx = torch.argmin(distances, dim=1)
+                for sentence_index, sentence in enumerate(batch):
+                    sentence.remove_labels(label_name)
 
-                for sentence, probs, pred_idx in zip(batch, probabilities, predicted_idx):
-                    label_value = self.label_dictionary.get_item_for_index(pred_idx.item())
-                    sentence.add_label(label_name, label_value, probs[pred_idx].item())
+                    if self.multi_label:
+                        for label_index, probability in enumerate(probabilities[sentence_index]):
+                            if probability > self.multi_label_threshold or return_probabilities_for_all_classes:
+                                label_value = self.label_dictionary.get_item_for_index(label_index)
+                                sentence.add_label(label_name, label_value, probability.item())
+                    else:
+                        predicted_idx = torch.argmax(probabilities[sentence_index])
+                        label_value = self.label_dictionary.get_item_for_index(predicted_idx.item())
+                        sentence.add_label(label_name, label_value, probabilities[sentence_index, predicted_idx].item())
 
-                    if return_probabilities_for_all_classes:
-                        for i, prob in enumerate(probs):
-                            label_value = self.label_dictionary.get_item_for_index(i)
-                            sentence.add_label(label_name, label_value, prob.item())
+                        if return_probabilities_for_all_classes:
+                            for label_index, probability in enumerate(probabilities[sentence_index]):
+                                label_value = self.label_dictionary.get_item_for_index(label_index)
+                                sentence.add_label(f"{label_name}_all", label_value, probability.item())
 
-                # Clear embeddings to save memory
                 for sentence in batch:
                     sentence.clear_embeddings(embedding_storage_mode)
 
         if return_loss:
             return total_loss, total_sentences
-
         return sentences
 
     def _get_state_dict(self):
@@ -290,6 +315,7 @@ class DeepNCMClassifier(Classifier[Sentence]):
             "mean_update_method": self.mean_update_method,
             "use_encoder": self.use_encoder,
             "multi_label": self.multi_label,
+            "multi_label_threshold": self.multi_label_threshold,
             "class_prototypes": self.class_prototypes.cpu(),
             "class_counts": self.class_counts.cpu(),
             "encoder": self.encoder.state_dict(),
@@ -320,6 +346,7 @@ class DeepNCMClassifier(Classifier[Sentence]):
             mean_update_method=state["mean_update_method"],
             use_encoder=state["use_encoder"],
             multi_label=state.get("multi_label", False),
+            multi_label_threshold=state.get("multi_label_threshold", 0.5),
             **kwargs,
         )
 
