@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Literal
 
 import torch
 from tqdm import tqdm
@@ -37,7 +37,7 @@ class DeepNCMClassifier(Classifier[Sentence]):
         label_type: str,
         encoding_dim: Optional[int] = None,
         alpha: float = 0.9,
-        mean_update_method: str = "online",
+        mean_update_method: Literal["online", "condensation", "decay"] = "online",
         use_encoder: bool = True,
         multi_label: bool = False,
         multi_label_threshold: float = 0.5,
