@@ -765,7 +765,7 @@ class DefaultClassifier(Classifier[DT], typing.Generic[DT, DT2], ABC):
         data_point_tensor = self._encode_data_points(sentences, data_points)
 
         # decode
-        scores = self.decoder(data_point_tensor)
+        scores = self.decoder(data_point_tensor, label_tensor)
 
         # an optional masking step (no masking in most cases)
         scores = self._mask_scores(scores, data_points)
@@ -860,9 +860,11 @@ class DefaultClassifier(Classifier[DT], typing.Generic[DT, DT2], ABC):
                 if not data_points:
                     continue
 
+                gold_labels = self._prepare_label_tensor([data_points[index] for index in filtered_indices])
+
                 # pass data points through network and decode
                 data_point_tensor = self._encode_data_points(batch, data_points)
-                scores = self.decoder(data_point_tensor)
+                scores = self.decoder(data_point_tensor, gold_labels)
                 scores = self._mask_scores(scores, data_points)
 
                 # if anything could possibly be predicted
@@ -887,7 +889,6 @@ class DefaultClassifier(Classifier[DT], typing.Generic[DT, DT2], ABC):
                             has_any_unknown_label = True
                             scores = torch.index_select(scores, 0, torch.tensor(filtered_indices, device=flair.device))
 
-                        gold_labels = self._prepare_label_tensor([data_points[index] for index in filtered_indices])
                         overall_loss += self._calculate_loss(scores, gold_labels)[0]
                         label_count += len(filtered_indices)
 
