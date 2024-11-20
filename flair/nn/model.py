@@ -863,8 +863,9 @@ class DefaultClassifier(Classifier[DT], typing.Generic[DT, DT2], ABC):
                 gold_labels = self._prepare_label_tensor([data_points[index] for index in filtered_indices])
 
                 # pass data points through network and decode
+                labels_tensor = self._prepare_label_tensor(data_points)
                 data_point_tensor = self._encode_data_points(batch, data_points)
-                scores = self.decoder(data_point_tensor, gold_labels)
+                scores = self.decoder(data_point_tensor, labels_tensor)
                 scores = self._mask_scores(scores, data_points)
 
                 # if anything could possibly be predicted

@@ -147,7 +147,7 @@ class DeepNCMDecoder(torch.nn.Module):
             self.prototype_updates = torch.zeros_like(self.class_prototypes, device=flair.device)
             self.prototype_update_counts = torch.zeros(self.num_classes, device=flair.device)
 
-    def forward(self, embedded: torch.Tensor, label_tensor: torch.Tensor) -> torch.Tensor:
+    def forward(self, embedded: torch.Tensor, label_tensor: torch.Tensor, calculate_proto_updates: bool = False) -> torch.Tensor:
         encoded_embeddings = embedded
 
         # if self.learning_mode == "learn_only_map_and_prototypes":
@@ -158,7 +158,8 @@ class DeepNCMDecoder(torch.nn.Module):
 
         distances = self._calculate_distances(encoded_embeddings)
 
-        self._calculate_prototype_updates(encoded_embeddings, label_tensor)
+        if calculate_proto_updates:
+            self._calculate_prototype_updates(encoded_embeddings, label_tensor)
 
         scores = -distances
 
