@@ -799,8 +799,8 @@ class DefaultClassifier(Classifier[DT], typing.Generic[DT, DT2], ABC):
         verbose: bool = False,
         label_name: Optional[str] = None,
         return_loss: bool = False,
-        embedding_storage_mode: EmbeddingStorageMode = "none",
-    ):
+        embedding_storage_mode="none",
+    ) -> Optional[Union[List[DT], Tuple[float, int]]]:
         """Predicts the class labels for the given sentences. The labels are directly added to the sentences.
 
         Args:
@@ -860,8 +860,6 @@ class DefaultClassifier(Classifier[DT], typing.Generic[DT, DT2], ABC):
                 if not data_points:
                     continue
 
-                gold_labels = self._prepare_label_tensor([data_points[index] for index in filtered_indices])
-
                 # pass data points through network and decode
                 labels_tensor = self._prepare_label_tensor(data_points)
                 data_point_tensor = self._encode_data_points(batch, data_points)
@@ -890,6 +888,7 @@ class DefaultClassifier(Classifier[DT], typing.Generic[DT, DT2], ABC):
                             has_any_unknown_label = True
                             scores = torch.index_select(scores, 0, torch.tensor(filtered_indices, device=flair.device))
 
+                        gold_labels = self._prepare_label_tensor([data_points[index] for index in filtered_indices])
                         overall_loss += self._calculate_loss(scores, gold_labels)[0]
                         label_count += len(filtered_indices)
 

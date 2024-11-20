@@ -1,15 +1,9 @@
 import logging
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Literal, Optional
 
 import torch
-from tqdm import tqdm
 
 import flair
-from flair.data import Dictionary, Sentence
-from flair.datasets import DataLoader, FlairDatapointDataset
-from flair.embeddings import DocumentEmbeddings
-from flair.embeddings.base import load_embeddings
-from flair.nn import Classifier
 
 log = logging.getLogger("flair")
 
@@ -31,17 +25,19 @@ class DeepNCMDecoder(torch.nn.Module):
     """
 
     def __init__(
-            self,
-            num_prototypes: int,
-            embeddings_size: int,
-            encoding_dim: Optional[int] = None,
-            alpha: float = 0.9,
-            mean_update_method: Literal["online", "condensation", "decay"] = "online",
-            use_encoder: bool = True,
-            multi_label: bool = False,  # should get from the Model it belongs to
+        self,
+        num_prototypes: int,
+        embeddings_size: int,
+        encoding_dim: Optional[int] = None,
+        alpha: float = 0.9,
+        mean_update_method: Literal["online", "condensation", "decay"] = "online",
+        use_encoder: bool = True,
+        multi_label: bool = False,  # should get from the Model it belongs to
     ) -> None:
 
         super().__init__()
+
+        self.num_classes = num_prototypes
 
         self.alpha = alpha
         self.mean_update_method = mean_update_method
@@ -89,8 +85,8 @@ class DeepNCMDecoder(torch.nn.Module):
         assert self.encoding_dim > 0, "encoding_dim must be greater than 0"
 
     @property
-    def num_prototypes(self):
-        """The number of class prototypes"""
+    def num_prototypes(self) -> int:
+        """The number of class prototypes."""
         return self.class_prototypes.size(0)
 
     def _calculate_distances(self, encoded_embeddings: torch.Tensor) -> torch.Tensor:
@@ -129,17 +125,16 @@ class DeepNCMDecoder(torch.nn.Module):
                 if self.mean_update_method in ["online", "condensation"]:
                     new_counts = self.class_counts[update_mask] + self.prototype_update_counts[update_mask]
                     self.class_prototypes[update_mask] = (
-                                                                 self.class_counts[update_mask].unsqueeze(1) *
-                                                                 self.class_prototypes[update_mask]
-                                                                 + self.prototype_updates[update_mask]
-                                                         ) / new_counts.unsqueeze(1)
+                        self.class_counts[update_mask].unsqueeze(1) * self.class_prototypes[update_mask]
+                        + self.prototype_updates[update_mask]
+                    ) / new_counts.unsqueeze(1)
                     self.class_counts[update_mask] = new_counts
                 elif self.mean_update_method == "decay":
                     new_prototypes = self.prototype_updates[update_mask] / self.prototype_update_counts[
                         update_mask
                     ].unsqueeze(1)
                     self.class_prototypes[update_mask] = (
-                            self.alpha * self.class_prototypes[update_mask] + (1 - self.alpha) * new_prototypes
+                        self.alpha * self.class_prototypes[update_mask] + (1 - self.alpha) * new_prototypes
                     )
                     self.class_counts[update_mask] += self.prototype_update_counts[update_mask]
 
@@ -147,14 +142,17 @@ class DeepNCMDecoder(torch.nn.Module):
             self.prototype_updates = torch.zeros_like(self.class_prototypes, device=flair.device)
             self.prototype_update_counts = torch.zeros(self.num_classes, device=flair.device)
 
-    def forward(self, embedded: torch.Tensor, label_tensor: torch.Tensor, calculate_proto_updates: bool = False) -> torch.Tensor:
+    def forward(
+        self, embedded: torch.Tensor, label_tensor: torch.Tensor, calculate_proto_updates: bool = False
+    ) -> torch.Tensor:
+        """Forward pass of the decoder, which calculates the scores as prototype distances.
+
+        :param embedded: Embedded representations of the input sentences.
+        :param label_tensor: True labels for the input sentences as a tensor.
+        :param calculate_proto_updates: Whether to calculate prototype updates during the forward pass; should only be used during training.
+        :return: Scores as a tensor of distances to class prototypes.
+        """
         encoded_embeddings = embedded
-
-        # if self.learning_mode == "learn_only_map_and_prototypes":
-        #    embedded = embedded.detach()
-
-        # decode embeddings into prototype space
-        # encoded = self.metric_space_decoder(embedded) if self.metric_space_decoder is not None else embedded
 
         distances = self._calculate_distances(encoded_embeddings)
 
