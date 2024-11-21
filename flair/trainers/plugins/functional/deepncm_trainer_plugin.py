@@ -1,6 +1,7 @@
 import torch
 
-from flair.models import DeepNCMClassifier, MultitaskModel
+from flair.models import MultitaskModel
+from flair.models.deepncm_classification_model import DeepNCMDecoder
 from flair.trainers.plugins.base import TrainerPlugin
 
 
@@ -21,7 +22,7 @@ class DeepNCMPlugin(TrainerPlugin):
         models = model.tasks.values() if isinstance(model, MultitaskModel) else [model]
 
         for sub_model in models:
-            if isinstance(sub_model, DeepNCMClassifier):
+            if isinstance(sub_model.decoder, DeepNCMDecoder):
                 if operation == "condensation" and sub_model.mean_update_method == "condensation":
                     sub_model.class_counts.data = torch.ones_like(sub_model.class_counts)
                 elif operation == "update":
