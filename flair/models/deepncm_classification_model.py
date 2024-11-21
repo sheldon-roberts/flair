@@ -143,20 +143,19 @@ class DeepNCMDecoder(torch.nn.Module):
             self.prototype_update_counts = torch.zeros(self.num_classes, device=flair.device)
 
     def forward(
-        self, embedded: torch.Tensor, label_tensor: torch.Tensor, calculate_proto_updates: bool = False
+        self, embedded: torch.Tensor, label_tensor: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """Forward pass of the decoder, which calculates the scores as prototype distances.
 
         :param embedded: Embedded representations of the input sentences.
         :param label_tensor: True labels for the input sentences as a tensor.
-        :param calculate_proto_updates: Whether to calculate prototype updates during the forward pass; should only be used during training.
         :return: Scores as a tensor of distances to class prototypes.
         """
         encoded_embeddings = embedded
 
         distances = self._calculate_distances(encoded_embeddings)
 
-        if calculate_proto_updates:
+        if label_tensor is not None:
             self._calculate_prototype_updates(encoded_embeddings, label_tensor)
 
         scores = -distances

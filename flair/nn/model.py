@@ -799,7 +799,7 @@ class DefaultClassifier(Classifier[DT], typing.Generic[DT, DT2], ABC):
         verbose: bool = False,
         label_name: Optional[str] = None,
         return_loss: bool = False,
-        embedding_storage_mode="none",
+        embedding_storage_mode: EmbeddingStorageMode = "none",
     ) -> Optional[Union[List[DT], Tuple[float, int]]]:
         """Predicts the class labels for the given sentences. The labels are directly added to the sentences.
 
@@ -861,9 +861,8 @@ class DefaultClassifier(Classifier[DT], typing.Generic[DT, DT2], ABC):
                     continue
 
                 # pass data points through network and decode
-                labels_tensor = self._prepare_label_tensor(data_points)
                 data_point_tensor = self._encode_data_points(batch, data_points)
-                scores = self.decoder(data_point_tensor, labels_tensor)
+                scores = self.decoder(data_point_tensor)
                 scores = self._mask_scores(scores, data_points)
 
                 # if anything could possibly be predicted
